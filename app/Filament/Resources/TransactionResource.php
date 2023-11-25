@@ -9,12 +9,16 @@ use Filament\Tables\Table;
 use App\Models\Transaction;
 use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
+use Filament\Tables\Filters\Filter;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Filters\SelectFilter;
 use Illuminate\Database\Eloquent\Builder;
-use TransactionResource\Widgets\StatsOverview;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Infolists\Components\ImageEntry;
+use Filament\Tables\Columns\Summarizers\Range;
+use TransactionResource\Widgets\StatsOverview;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\TransactionResource\Pages;
 use App\Filament\Resources\TransactionResource\RelationManagers;
@@ -55,7 +59,12 @@ class TransactionResource extends Resource
                 Tables\Columns\TextColumn::make('type')
                     ->formatStateUsing(fn($state) => $state == 'cash' ? 'Tunai' : 'QRIS')
                     ->searchable()
-                    ->sortable(),
+                    ->badge()
+                    ->sortable()
+                    ->color(fn(string $state): string => match ($state) {
+                        'cash' => 'warning',
+                        'qris' => 'success'
+                    }),
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
@@ -66,10 +75,13 @@ class TransactionResource extends Resource
                         thousandsSeparator: ',',
                     )
                     ->money('IDR')
-                    ->sortable(),
+                    ->sortable()
+                    ->summarize(Sum::make()->money("IDR")),
                 Tables\Columns\TextColumn::make('date')
                     ->date()
-                    ->sortable(),
+                    ->sortable()
+                    ->summarize(Range::make()
+                        ->minimalDateTimeDifference()),
                 Tables\Columns\ImageColumn::make('proof')
                     ->size(75)
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -114,6 +126,22 @@ class TransactionResource extends Resource
                             else
                                 return $query->where('amount', '>', str_replace('>', '', $amount));
                         }
+                            );
+                    }),
+                Filter::make('date')
+                    ->form([
+                        DatePicker::make('created_from'),
+                        DatePicker::make('created_until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['created_from'],
+                                fn(Builder $query, $date): Builder => $query->whereDate('created_at', '>=', $date),
+                            )
+                            ->when(
+                                $data['created_until'],
+                                fn(Builder $query, $date): Builder => $query->whereDate('created_at', '<=', $date),
                             );
                     })
             ])
